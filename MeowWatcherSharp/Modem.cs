@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Management;
@@ -9,6 +10,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using GsmComm.PduConverter;
 using GsmComm.PduConverter.SmartMessaging;
+using NAudio.Wave;
+using NAudio.Lame;
+using NAudio.Wave.SampleProviders;
 
 namespace MeowWatcherSharp
 {
@@ -32,6 +36,8 @@ namespace MeowWatcherSharp
                 if (!Data.Contains("OK")) { throw new Exception($"Init Failure:{Data}"); }
                 //Set Work Mode
                 Data = RunCommandWithFeedBack(Device.ModemPort, "AT^SYSCFG=2,2,3FFFFFFF,2,4");
+                if (!Data.Contains("OK")) { throw new Exception($"Init Failure:{Data}"); }
+                Data = RunCommandWithFeedBack(Device.ModemPort, "AT^U2DIAG=0");
                 if (!Data.Contains("OK")) { throw new Exception($"Init Failure:{Data}"); }
                 //Get IMEI
                 Data = RunCommandWithFeedBack(Device.ModemPort, "AT+CGSN");
@@ -89,12 +95,17 @@ namespace MeowWatcherSharp
             var RegexStr = "\\r\\n\\+CPMS: [\\\"A-Z,0-9]*\\r\\n";
             Data = Regex.Match(Data, RegexStr).ToString().Replace("\r\n", "").Replace("+CPMS: ", "").Replace("\"", "");
             var SMSNum = Int32.Parse(Data.Split(',')[1]);
-            for (var SMSCount = 0; SMSNum > SMSCount; SMSCount++)
+            if (SMSNum == 0) return;
+            for (var SMSCount = 0; SMSNum >= SMSCount; SMSCount++)
             {
                 Data = RunCommandWithFeedBack(Device.ModemPort, "AT+CMGR=" + SMSCount.ToString());
                 if (!Data.Contains("OK")) { throw new Exception("Recv Failure"); }
                 RegexStr = $"\r\n([0-9A-F]*)\r\n";
                 Data = Regex.Match(Data, RegexStr).ToString().Replace("\r\n", "");
+                if (Data == "")
+                {
+                    continue;
+                }
                 GsmComm.PduConverter.IncomingSmsPdu PDU = IncomingSmsPdu.Decode(Data, true);
                 var SendTime = "GMT" + PDU.GetTimestamp().ToDateTime().ToString("z yyyy-MM-dd HH:mm:ss");
                 var ReceiveTime = "GMT" + DateTime.Now.ToString("z yyyy-MM-dd HH:mm:ss");
@@ -116,6 +127,128 @@ namespace MeowWatcherSharp
                 }
                 Data = RunCommandWithFeedBack(Device.ModemPort, "AT+CMGD=" + SMSCount.ToString());
             }
+        }
+        public static void ReceiveStatus(Settings.DevicesItem Device)
+        {
+            if (Device.DiagnosePort != null)
+            {
+                if (Device.DiagnosePort.IsOpen)
+                {
+                    var Data = Device.DiagnosePort.ReadExisting().Replace("\r\n\r\n", "\r\n").TrimStart('\r').TrimStart('\n').TrimEnd('\n').TrimEnd('\r');
+                    if (Data == "") { return; }
+                    var Status = Data.Split(new string[] { "\r\n" }, StringSplitOptions.None);
+                    var Start = (DateTime.Now.ToUniversalTime().Ticks - 621355968000000000) / 10000;
+                    foreach (var Response in Status)
+                    {
+                        if (Response.Contains("^RSSI: "))
+                        {
+                            Device.Signal = Data.Split(':')[1];
+                        }
+                        else if (Response.Contains("+CRING: "))
+                        {
+                            Console.WriteLine($"{Device.Name}-IncomingCall");
+                            //Refuse Call
+                            //var Feedback = RunCommandWithFeedBack(Device.ModemPort, "AT+CHUP");
+                            //Console.WriteLine(Feedback);
+                            if (Device.Busy == false)
+                            {
+                                Device.Busy = true;
+                                AnswerCall(Device);
+                                Device.Busy = false;
+                            }
+                        }
+                        else if (Response.Contains("+CLIP: "))
+                        {
+                            var Args = Response.Replace("+CLIP: ", "").Replace("\"", "").Split(',');
+                            Console.WriteLine($"{Device.Name}-IncomingNumber-{Args[0]}");
+                        }
+                        else if (Response.Contains("^CEND:"))
+                        {
+                            var Args = Response.Replace("^CEND:", "").Replace("\"", "").Split(',');
+                            Console.WriteLine($"{Device.Name}-IncomingCallEnd-{Args[0]}");
+                        }
+                        else
+                        {
+                            Console.WriteLine($"{Device.Name}-{Response}");
+                        }
+                    }
+                }
+            }
+        }
+        public static void AnswerCall(Settings.DevicesItem Device)
+        {
+            // 32000khz 16bit mono 
+            var WAVReader = new WaveFileReader("1.wav");
+            //var resampler = new WdlResamplingSampleProvider(WAVReader.ToSampleProvider(), 8000);
+            //var monoSource = resampler.ToMono().ToWaveProvider16();
+            byte[] bytesOutput = new byte[1280];
+            var Data = RunCommandWithFeedBack(Device.ModemPort, "ATA");
+            Console.WriteLine(Data);
+            Data = RunCommandWithFeedBack(Device.ModemPort, "AT^DDSETEX=2");
+            Console.WriteLine(Data);
+            var Start = (DateTime.Now.ToUniversalTime().Ticks - 621355968000000000) / 10000;
+            var WaveFormat = new WaveFormat(8000, 16, 1);
+            var WAVWriter = new WaveFileWriter($"{Device.Name}-{Start}.wav", WaveFormat);
+            //var bufferedWaveProvider = new BufferedWaveProvider(WaveFormat);
+            //bufferedWaveProvider.BufferLength = 1024000;
+            //bufferedWaveProvider.DiscardOnBufferOverflow = true;
+            //WaveOut waveout = new WaveOut();
+            //waveout.Init(bufferedWaveProvider);
+            byte[] ReadByteBuffer = new byte[16000];
+            while (((DateTime.Now.ToUniversalTime().Ticks - 621355968000000000) / 10000) - Start < 50000)
+            {
+                int bytesRead = WAVReader.Read(bytesOutput, 0, bytesOutput.Length);
+                if (bytesRead != 0)
+                {
+                    Device.VoicePort.Write(bytesOutput, 0, bytesRead);
+                }
+                //var step = 1024;
+                //using (var ms = new MemoryStream())
+                //{
+                //    int sourcePos = 0;
+                //    while (sourcePos < rawSource.Length)
+                //    {
+                //        var remain = (int)rawSource.Length - sourcePos;
+                //        var thisStepLength = remain > step ? step : remain;
+                //        byte[] stepBuffer;
+                //        stepBuffer = new byte[thisStepLength];
+                //        rawSource.Read(stepBuffer, sourcePos, thisStepLength);
+                //        sourcePos += thisStepLength;
+
+                //        Console.WriteLine($"Readed {sourcePos}/{(int)rawSource.Length}");
+                //        Device.VoicePort.Write(stepBuffer, 0, stepBuffer.Length);
+                //        Console.WriteLine($"Sended {sourcePos}/{(int)rawSource.Length}");
+                //    }
+                //}
+                //try
+                //{
+                //    int intLength = (int)rawSource.Length;
+                //    byte[] byteBuffer = new byte[intLength];
+                //    rawSource.Read(byteBuffer, 0, intLength);
+                //    Device.VoicePort.Write(byteBuffer, 0,1020);
+                //} catch (Exception ex)
+                //{
+
+                //}
+                //var ReadData = Device.VoicePort.ReadExisting();
+                //if (ReadData == "") continue;
+                //byte[] BufferBytes = System.Text.Encoding.Default.GetBytes(ReadData);
+
+
+                var ReadLen = Device.VoicePort.Read(ReadByteBuffer, 0, 16000);
+                //bufferedWaveProvider.AddSamples(ReadByteBuffer, 0, ReadLen);
+                WAVWriter.Write(ReadByteBuffer, 0, ReadLen);
+                WAVWriter.Flush();
+                //if (waveout.PlaybackState != PlaybackState.Playing)
+                //{
+                //    waveout.Play();
+                //}
+            }
+            WAVWriter.Close();
+            Data = RunCommandWithFeedBack(Device.ModemPort, "AT+CHUP");
+            Console.WriteLine(Data);
+            Data = RunCommandWithFeedBack(Device.ModemPort, "ATH");
+            Console.WriteLine(Data);
         }
         public static void DetectModemByIMEI(Settings.DevicesItem Device)
         {

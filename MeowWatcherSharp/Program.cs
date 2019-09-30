@@ -34,6 +34,7 @@ namespace MeowWatcherSharp
                     try
                     {
                         Modem.ReceiveSMS(Config.Devices[DeviceName]);
+                        Modem.ReceiveStatus(Config.Devices[DeviceName]);
                     }
                     catch (Exception ex)
                     {

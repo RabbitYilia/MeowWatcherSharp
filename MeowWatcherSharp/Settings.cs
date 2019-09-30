@@ -25,6 +25,8 @@ namespace MeowWatcherSharp
             public string ModemPortName = "";
             public string DiagnosePortName = "";
             public string VoicePortName = "";
+            public string Signal = "";
+            public bool Busy = false;
             public SerialPort ModemPort { get; set; }
             public SerialPort DiagnosePort { get; set; }
             public SerialPort VoicePort { get; set; }
