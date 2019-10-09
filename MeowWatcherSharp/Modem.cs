@@ -255,13 +255,12 @@ namespace MeowWatcherSharp
             Device.ModemPortName = "";
             Device.DiagnosePortName = "";
             Device.VoicePortName = "";
-            var searcher = new ManagementObjectSearcher("root\\cimv2", "SELECT * FROM Win32_POTSModem");
-            var collection = searcher.Get();
-            foreach (var device in collection)
+            var Devices = UsbSerialDeviceEnumerator.EnumerateModemDevices().ToArray();
+            foreach (var device in Devices)
             {
                 try
                 {
-                    var PortName = device.GetPropertyValue("AttachedTo").ToString();
+                    var PortName = device.PortName;
                     var ComPort = new SerialPort(PortName);
                     Console.WriteLine($"Detect {PortName}");
                     ComPort.WriteTimeout = 200;
@@ -272,7 +271,7 @@ namespace MeowWatcherSharp
                     if (Data.Contains("OK"))
                     {
                         //Modem Port
-                        var DeviceID = device.GetPropertyValue("DeviceID").ToString().Split('\\')[2].Split('&')[1];
+                        var DeviceID = device.ID;
                         var PortIMEI = Regex.Match(RunCommandWithFeedBack(ComPort, "AT+CGSN"), "\\r\\n[A=Za-z0-9]*\\r\\n").ToString().Replace("\r\n", "");
                         if (PortIMEI == Device.IMEI)
                         {
@@ -297,39 +296,28 @@ namespace MeowWatcherSharp
 
         static string DetectDiagnosePort(string SerialID)
         {
-            ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\cimv2", "SELECT * FROM Win32_PnPEntity WHERE ClassGuid=\"{4d36e978-e325-11ce-bfc1-08002be10318}\"");
-            var collection = searcher.Get();
-            foreach (var device in collection)
+            var Devices = UsbSerialDeviceEnumerator.EnumerateSerialDevices().ToArray();
+            foreach (var device in Devices)
             {
-                var DeviceID = device.GetPropertyValue("DeviceID").ToString().Split('\\')[2].Split('&')[1];
-                var Name = device.GetPropertyValue("Name").ToString();
+                var DeviceID = device.ID;
+                var Name = device.PortName;
                 if (SerialID == DeviceID)
                 {
-                    if (Name.Contains("PC UI Interface"))
-                    {
-                        var PortName = Regex.Match(device.GetPropertyValue("Name").ToString(), "(COM[0-9]*)");
-                        return PortName.ToString();
-                    }
-
+                    if (device.MI == 2) return Name;
                 }
             }
             return "";
         }
         static string DetectVoicePort(string SerialID)
         {
-            ManagementObjectSearcher searcher = new ManagementObjectSearcher("root\\cimv2", "SELECT * FROM Win32_PnPEntity WHERE ClassGuid=\"{4d36e978-e325-11ce-bfc1-08002be10318}\"");
-            var collection = searcher.Get();
-            foreach (var device in collection)
+            var Devices = UsbSerialDeviceEnumerator.EnumerateSerialDevices().ToArray();
+            foreach (var device in Devices)
             {
-                var DeviceID = device.GetPropertyValue("DeviceID").ToString().Split('\\')[2].Split('&')[1];
-                var Name = device.GetPropertyValue("Name").ToString();
+                var DeviceID = device.ID;
+                var Name = device.PortName;
                 if (SerialID == DeviceID)
                 {
-                    if (Name.Contains("Application Interface"))
-                    {
-                        var PortName = Regex.Match(device.GetPropertyValue("Name").ToString(), "(COM[0-9]*)");
-                        return PortName.ToString();
-                    }
+                    if (device.MI == 1) return Name;
                 }
             }
             return "";
