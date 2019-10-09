@@ -21,84 +21,61 @@ namespace MeowWatcherSharp
             NativeMethods.SetupDiClassGuidsFromNameW(Type, ref gid, 0, ref n);
             NativeMethods.SetupDiClassGuidsFromNameW(Type, ref gid, n, ref n);
 
-            var hDevInfoSet = NativeMethods.SetupDiGetClassDevs(
+            var ModemhDevInfoSet = NativeMethods.SetupDiGetClassDevs(
                 ref gid,
                 null,
                 IntPtr.Zero,
                 presentOnly ? NativeMethods.DiGetClassFlags.DIGCF_PRESENT : 0);
 
-            if (hDevInfoSet.ToInt64() == NativeMethods.INVALID_HANDLE_VALUE)
+            if (ModemhDevInfoSet.ToInt64() == NativeMethods.INVALID_HANDLE_VALUE)
             {
                 yield break;
             }
 
-            try
-            {
-                var devInfoData = new NativeMethods.DevInfoData { CbSize = (uint)Marshal.SizeOf<NativeMethods.DevInfoData>() };
-
-                for (uint i = 0; NativeMethods.SetupDiEnumDeviceInfo(hDevInfoSet, i, ref devInfoData); i++)
-                {
-                    var id = GetDeviceIds(hDevInfoSet, devInfoData);
-
-                    var device = new ModemDevice
-                    {
-                        PortName = GetPortName(hDevInfoSet, devInfoData),
-                        FriendlyName = GetFriendlyName(hDevInfoSet, devInfoData),
-                        Description = GetDescription(hDevInfoSet, devInfoData),
-                        ID = id["ID"],
-                        Vid = id.ContainsKey("VID") ? (int?)int.Parse(id["VID"], System.Globalization.NumberStyles.HexNumber) : null,
-                        Pid = id.ContainsKey("PID") ? (int?)int.Parse(id["PID"], System.Globalization.NumberStyles.HexNumber) : null,
-                        Rev = id.ContainsKey("REV") ? (int?)int.Parse(id["REV"], System.Globalization.NumberStyles.HexNumber) : null,
-                        MI = id.ContainsKey("MI") ? (int?)int.Parse(id["MI"], System.Globalization.NumberStyles.HexNumber) : null,
-                    };
-                    yield return device;
-                }
-
-                if (Marshal.GetLastWin32Error() != NativeMethods.NO_ERROR &&
-                    Marshal.GetLastWin32Error() != NativeMethods.ERROR_NO_MORE_ITEMS)
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error(), $"Failed to enumerate USB serial devices. Error: [{Marshal.GetLastWin32Error()}] HR: [{Marshal.GetHRForLastWin32Error()}]");
-                }
-            }
-            finally
-            {
-                NativeMethods.SetupDiDestroyDeviceInfoList(hDevInfoSet);
-            }
-        }
-
-        public static IEnumerable<ModemDevice> EnumerateSerialDevices(bool presentOnly = true)
-        {
-            var hDevInfoSet = NativeMethods.SetupDiGetClassDevs(
+            var SerialhDevInfoSet = NativeMethods.SetupDiGetClassDevs(
                 ref NativeMethods.GUID_DEVINTERFACE_SERENUM_BUS_ENUMERATOR,
                 null,
                 IntPtr.Zero,
                 presentOnly ? NativeMethods.DiGetClassFlags.DIGCF_PRESENT : 0);
-           
-            if (hDevInfoSet.ToInt64() == NativeMethods.INVALID_HANDLE_VALUE)
+
+            if (SerialhDevInfoSet.ToInt64() == NativeMethods.INVALID_HANDLE_VALUE)
             {
                 yield break;
             }
 
             try
             {
-                var devInfoData = new NativeMethods.DevInfoData {CbSize = (uint)Marshal.SizeOf<NativeMethods.DevInfoData>()};
+                var ModemdevInfoData = new NativeMethods.DevInfoData { CbSize = (uint)Marshal.SizeOf<NativeMethods.DevInfoData>() };
+                var SerialdevInfoData = new NativeMethods.DevInfoData { CbSize = (uint)Marshal.SizeOf<NativeMethods.DevInfoData>() };
 
-                for (uint i = 0; NativeMethods.SetupDiEnumDeviceInfo(hDevInfoSet, i, ref devInfoData); i++)
+                for (uint i = 0; NativeMethods.SetupDiEnumDeviceInfo(ModemhDevInfoSet, i, ref ModemdevInfoData); i++)
                 {
-                    var id = GetDeviceIds(hDevInfoSet, devInfoData);
-
+                    var Modemid = GetDeviceIds(ModemhDevInfoSet, ModemdevInfoData);
                     var device = new ModemDevice
                     {
-                        PortName = GetPortName(hDevInfoSet, devInfoData),
-                        FriendlyName = GetFriendlyName(hDevInfoSet, devInfoData),
-                        Description = GetDescription(hDevInfoSet, devInfoData),
-                        ID = id["ID"],
-                        Vid = id.ContainsKey("VID") ? (int?)int.Parse(id["VID"], System.Globalization.NumberStyles.HexNumber) : null,
-                        Pid = id.ContainsKey("PID") ? (int?)int.Parse(id["PID"], System.Globalization.NumberStyles.HexNumber) : null,
-                        Rev = id.ContainsKey("REV") ? (int?)int.Parse(id["REV"], System.Globalization.NumberStyles.HexNumber) : null,
-                        MI = id.ContainsKey("MI") ? (int?)int.Parse(id["MI"], System.Globalization.NumberStyles.HexNumber) : null,
+                        ModemPortName = GetPortName(ModemhDevInfoSet, ModemdevInfoData),
+                        FriendlyName = GetFriendlyName(ModemhDevInfoSet, ModemdevInfoData),
+                        Description = GetDescription(ModemhDevInfoSet, ModemdevInfoData),
+                        ID = Modemid["ID"],
+                        Vid = Modemid.ContainsKey("VID") ? (int?)int.Parse(Modemid["VID"], System.Globalization.NumberStyles.HexNumber) : null,
+                        Pid = Modemid.ContainsKey("PID") ? (int?)int.Parse(Modemid["PID"], System.Globalization.NumberStyles.HexNumber) : null,
+                        Rev = Modemid.ContainsKey("REV") ? (int?)int.Parse(Modemid["REV"], System.Globalization.NumberStyles.HexNumber) : null,
+                        MI = Modemid.ContainsKey("MI") ? (int?)int.Parse(Modemid["MI"], System.Globalization.NumberStyles.HexNumber) : null,
                     };
-
+                    for (uint j = 0; NativeMethods.SetupDiEnumDeviceInfo(SerialhDevInfoSet, j, ref SerialdevInfoData); j++)
+                    {
+                        var Serialid = GetDeviceIds(SerialhDevInfoSet, SerialdevInfoData);
+                        if (Modemid["ID"] == Serialid["ID"])
+                        {
+                            var PortName = GetPortName(SerialhDevInfoSet, SerialdevInfoData);
+                            var MI = Modemid.ContainsKey("MI") ? (int?)int.Parse(Serialid["MI"], System.Globalization.NumberStyles.HexNumber) : null;
+                            switch (MI)
+                            {
+                                case 1:device.VoicePortName= PortName; break;
+                                case 2: device.DiagnosePortName=PortName; break;
+                            }
+                        }
+                    }
                     yield return device;
                 }
 
@@ -110,7 +87,8 @@ namespace MeowWatcherSharp
             }
             finally
             {
-                NativeMethods.SetupDiDestroyDeviceInfoList(hDevInfoSet);
+                NativeMethods.SetupDiDestroyDeviceInfoList(ModemhDevInfoSet);
+                NativeMethods.SetupDiDestroyDeviceInfoList(SerialhDevInfoSet);
             }
         }
 

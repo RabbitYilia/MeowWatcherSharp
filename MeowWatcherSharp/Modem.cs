@@ -260,7 +260,7 @@ namespace MeowWatcherSharp
             {
                 try
                 {
-                    var PortName = device.PortName;
+                    var PortName = device.ModemPortName;
                     var ComPort = new SerialPort(PortName);
                     Console.WriteLine($"Detect {PortName}");
                     ComPort.WriteTimeout = 200;
@@ -275,9 +275,9 @@ namespace MeowWatcherSharp
                         var PortIMEI = Regex.Match(RunCommandWithFeedBack(ComPort, "AT+CGSN"), "\\r\\n[A=Za-z0-9]*\\r\\n").ToString().Replace("\r\n", "");
                         if (PortIMEI == Device.IMEI)
                         {
-                            Device.ModemPortName = PortName;
-                            Device.DiagnosePortName = Modem.DetectDiagnosePort(DeviceID);
-                            Device.VoicePortName = Modem.DetectVoicePort(DeviceID);
+                            Device.ModemPortName = device.ModemPortName;
+                            Device.DiagnosePortName = device.DiagnosePortName;
+                            Device.VoicePortName = device.VoicePortName;
                             ComPort.Close();
                             Console.WriteLine($"{Device.Name}-ModemPort Works on {Device.ModemPortName}");
                             Console.WriteLine($"{Device.Name}-DiagnosePort Works on {Device.DiagnosePortName}");
@@ -294,34 +294,6 @@ namespace MeowWatcherSharp
             }
         }
 
-        static string DetectDiagnosePort(string SerialID)
-        {
-            var Devices = UsbSerialDeviceEnumerator.EnumerateSerialDevices().ToArray();
-            foreach (var device in Devices)
-            {
-                var DeviceID = device.ID;
-                var Name = device.PortName;
-                if (SerialID == DeviceID)
-                {
-                    if (device.MI == 2) return Name;
-                }
-            }
-            return "";
-        }
-        static string DetectVoicePort(string SerialID)
-        {
-            var Devices = UsbSerialDeviceEnumerator.EnumerateSerialDevices().ToArray();
-            foreach (var device in Devices)
-            {
-                var DeviceID = device.ID;
-                var Name = device.PortName;
-                if (SerialID == DeviceID)
-                {
-                    if (device.MI == 1) return Name;
-                }
-            }
-            return "";
-        }
         static string RunCommandWithFeedBack(SerialPort ComPort, String Command)
         {
             var Result = "";
